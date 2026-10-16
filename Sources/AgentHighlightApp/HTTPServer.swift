@@ -5,6 +5,7 @@ struct HTTPRequest {
     let method: String
     let path: String
     let query: [String: String]
+    let headers: [String: String]
     let body: Data
 }
 
@@ -28,6 +29,7 @@ struct HTTPResponse {
         switch status {
         case 200: return "OK"
         case 400: return "Bad Request"
+        case 403: return "Forbidden"
         case 404: return "Not Found"
         case 405: return "Method Not Allowed"
         case 413: return "Payload Too Large"
@@ -61,10 +63,12 @@ final class HTTPServer {
     typealias Handler = (HTTPRequest) -> HTTPResponse
 
     private static let maxBodyBytes = 1_000_000
+    private static let maxHeaderBytes = 16_384
     private static let headerTerminator = Data("\r\n\r\n".utf8)
 
     private let listener: NWListener
     private let handler: Handler
+    private let port: UInt16
     private let queue = DispatchQueue(label: "agenthighlight.http")
 
     init(port: UInt16, handler: @escaping Handler) throws {
@@ -73,6 +77,7 @@ final class HTTPServer {
         parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!)
         listener = try NWListener(using: parameters)
         self.handler = handler
+        self.port = port
     }
 
     func start(onFailure: @escaping (Error) -> Void) {
@@ -109,9 +114,11 @@ final class HTTPServer {
             case .incomplete:
                 self.send(.error("incomplete request", status: 400), on: connection)
             case .tooLarge:
-                self.send(.error("request body exceeds 1MB", status: 413), on: connection)
+                self.send(.error("request exceeds size limits", status: 413), on: connection)
             case .malformed:
                 self.send(.error("malformed request", status: 400), on: connection)
+            case .forbidden(let reason):
+                self.send(.error(reason, status: 403), on: connection)
             case .request(let request):
                 self.send(self.handler(request), on: connection)
             }
@@ -122,11 +129,14 @@ final class HTTPServer {
         case incomplete
         case tooLarge
         case malformed
+        case forbidden(String)
         case request(HTTPRequest)
     }
 
     private func parse(_ buffer: Data) -> ParseResult {
-        guard let headerEnd = buffer.range(of: Self.headerTerminator) else { return .incomplete }
+        guard let headerEnd = buffer.range(of: Self.headerTerminator) else {
+            return buffer.count > Self.maxHeaderBytes ? .tooLarge : .incomplete
+        }
         guard let headerText = String(data: buffer[buffer.startIndex..<headerEnd.lowerBound], encoding: .utf8) else {
             return .malformed
         }
@@ -136,12 +146,16 @@ final class HTTPServer {
         let method = String(requestLine[0]).uppercased()
         let target = String(requestLine[1])
 
-        var contentLength = 0
+        var headers: [String: String] = [:]
         for line in lines.dropFirst() {
             let parts = line.split(separator: ":", maxSplits: 1)
-            guard parts.count == 2, parts[0].trimmingCharacters(in: .whitespaces).lowercased() == "content-length" else { continue }
-            contentLength = Int(parts[1].trimmingCharacters(in: .whitespaces)) ?? 0
+            guard parts.count == 2 else { continue }
+            headers[parts[0].trimmingCharacters(in: .whitespaces).lowercased()] = parts[1].trimmingCharacters(in: .whitespaces)
         }
+        if let reason = originPolicyViolation(headers) { return .forbidden(reason) }
+
+        let contentLength = headers["content-length"].flatMap(Int.init) ?? 0
+        guard contentLength >= 0 else { return .malformed }
         if contentLength > Self.maxBodyBytes { return .tooLarge }
 
         let body = buffer[headerEnd.upperBound...]
@@ -152,7 +166,24 @@ final class HTTPServer {
         var query: [String: String] = [:]
         for item in components?.queryItems ?? [] { query[item.name] = item.value ?? "" }
 
-        return .request(HTTPRequest(method: method, path: path, query: query, body: Data(body.prefix(contentLength))))
+        return .request(HTTPRequest(
+            method: method,
+            path: path,
+            query: query,
+            headers: headers,
+            body: Data(body.prefix(contentLength))
+        ))
+    }
+
+    private func originPolicyViolation(_ headers: [String: String]) -> String? {
+        if headers["origin"] != nil {
+            return "browser-origin requests are not accepted"
+        }
+        let allowedHosts: Set<String> = ["127.0.0.1", "localhost", "127.0.0.1:\(port)", "localhost:\(port)"]
+        if let host = headers["host"]?.lowercased(), !allowedHosts.contains(host) {
+            return "host must be 127.0.0.1:\(port)"
+        }
+        return nil
     }
 
     private func send(_ response: HTTPResponse, on connection: NWConnection) {
