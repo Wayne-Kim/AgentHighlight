@@ -1,4 +1,6 @@
-import Foundation
-import HighlightKit
+import AppKit
 
-print("AgentHighlightApp \(Defaults.version)")
+let app = NSApplication.shared
+let delegate = AppDelegate()
+app.delegate = delegate
+app.run()
