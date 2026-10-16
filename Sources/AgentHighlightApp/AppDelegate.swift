@@ -7,12 +7,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let resolver = TargetResolver()
     private var statusItem: NSStatusItem?
     private var server: HTTPServer?
+    private var escapeMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         installStatusItem()
         promptForAccessibilityIfNeeded()
+        installEscapeMonitor()
         startServer()
+    }
+
+    private func installEscapeMonitor() {
+        escapeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == 53 else { return }
+            self?.overlay.clear()
+        }
     }
 
     private func installStatusItem() {
