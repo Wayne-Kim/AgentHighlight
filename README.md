@@ -17,8 +17,8 @@ make install
 - release 빌드 -> `~/Applications/AgentHighlight.app`(Apple Development 인증서가 있으면 그걸로, 없으면
   ad-hoc 서명) -> `hl` 을 `/usr/local/bin` 또는 `~/.local/bin` 에 복사 -> 앱 실행 -> `hl doctor`.
 - 첫 실행 때 접근성 권한 창이 뜬다. 시스템 설정 > 개인정보 보호 및 보안 > 손쉬운 사용에서
-  AgentHighlight 를 켠다. 메뉴바 아이콘의 "접근성 권한 열기..." 로도 갈 수 있다. 권한이 없어도 좌표·창
-  가리키기는 되고, 문구 탐색(`hl text`)만 막힌다.
+  AgentHighlight 를 켠다. 메뉴바 아이콘의 "접근성 권한 열기..." 로도 갈 수 있다. 권한이 없어도 좌표
+  가리키기와 제목 필터 없는 창 가리키기는 되고, 문구 탐색(`hl text`)과 창 제목 필터는 막힌다.
 - 앱을 다시 빌드해 설치하면 서명이 바뀌어 권한을 다시 켜야 할 수 있다.
 
 ## 사용
@@ -36,7 +36,8 @@ hl doctor
 ```
 
 출력은 JSON. 종료 코드는 0 성공, 1 대상 못 찾음, 2 앱 연결 실패, 3 인자 오류. 하이라이트는 기본 8초
-뒤 사라지고, Esc 나 `hl clear` 로 바로 지운다. 좌표계는 주 모니터 왼쪽 위 원점(접근성 API·CGWindowList
+뒤 사라지고, Esc 나 `hl clear` 로 바로 지운다. 하이라이트가 떠 있는 동안의 Esc 한 번은 지우는 데만
+쓰이고 앞 앱에는 전달되지 않는다. 앱은 같은 포트에 다른 인스턴스가 이미 응답하면 바로 종료한다. 좌표계는 주 모니터 왼쪽 위 원점(접근성 API·CGWindowList
 와 같다). 에이전트용 사용 안내는 `skills/agent-highlight/SKILL.md` 에 있다.
 
 ## HTTP 인터페이스

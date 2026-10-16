@@ -102,6 +102,9 @@ enum Commands {
             return Output.fail("usage: hl \(args.positionals[0]) <문구> [--app 이름] ...", code: ExitCode.usage)
         }
         let query = args.positionals.dropFirst().joined(separator: " ")
+        if let index = args.int("index"), index < 0 {
+            return Output.fail("--index must be >= 0", code: ExitCode.usage)
+        }
         var mode: MatchMode?
         if let raw = args.option("match") {
             guard let parsed = MatchMode(rawValue: raw) else {
@@ -136,22 +139,28 @@ enum Commands {
         guard args.positionals.count >= 2, let url = URL(string: args.positionals[1]), url.scheme != nil else {
             return Output.fail("usage: hl figma <url> [--label 라벨] [--wait 초]", code: ExitCode.usage)
         }
+        let browser = args.option("app") ?? "Google Chrome"
         let open = Process()
         open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        open.arguments = [url.absoluteString]
+        open.arguments = args.option("app").map { ["-a", $0, url.absoluteString] } ?? [url.absoluteString]
         do {
             try open.run()
             open.waitUntilExit()
         } catch {
             return Output.fail("cannot open url: \(error.localizedDescription)", code: ExitCode.appUnavailable)
         }
-        let browser = args.option("app") ?? "Google Chrome"
         let title = args.option("title") ?? #"Figma(\s*-|$)"#
-        let titleAppeared = waitForWindow(app: browser, title: title, seconds: args.double("wait") ?? 10, client: client)
+        let wait = args.double("wait") ?? 10
+        guard waitForWindow(app: browser, title: title, seconds: wait, client: client) else {
+            return Output.fail(
+                "no \(browser) window titled /\(title)/ appeared within \(Int(wait))s; the link may have opened in another browser - pass --app <browser> or --title <regex>",
+                code: ExitCode.notFound
+            )
+        }
         let target = Target(
             kind: .window,
             app: browser,
-            title: titleAppeared ? title : nil,
+            title: title,
             label: args.option("label") ?? "Figma: 선택된 노드(파란 테두리)를 보세요"
         )
         var request = makeRequest(args, targets: [target])

@@ -5,10 +5,16 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP_SOURCE="$("$ROOT/scripts/build-app.sh")"
 APP_TARGET="$HOME/Applications/AgentHighlight.app"
 
+pkill -x AgentHighlightApp 2>/dev/null || true
 if pgrep -x AgentHighlight >/dev/null 2>&1; then
   osascript -e 'quit app "AgentHighlight"' >/dev/null 2>&1 || true
-  sleep 1
 fi
+for _ in $(seq 1 20); do
+  if ! pgrep -x AgentHighlight >/dev/null 2>&1 && ! pgrep -x AgentHighlightApp >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.25
+done
 
 mkdir -p "$HOME/Applications"
 rm -rf "$APP_TARGET"

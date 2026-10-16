@@ -1,4 +1,5 @@
 import Foundation
+import HighlightKit
 
 enum AppLauncher {
     static let appPathEnvironmentKey = "HL_APP"
@@ -26,7 +27,9 @@ enum AppLauncher {
         }
         let open = Process()
         open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        open.arguments = ["-a", path]
+        open.arguments = client.port == Defaults.port
+            ? ["-a", path]
+            : ["--env", "\(Defaults.portEnvironmentKey)=\(client.port)", "-a", path]
         try open.run()
         open.waitUntilExit()
 
