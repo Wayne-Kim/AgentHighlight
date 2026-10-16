@@ -34,6 +34,10 @@ final class CommandRouter {
             ))
         case ("POST", "/highlight"):
             return highlight(request.body)
+        case ("POST", "/find"):
+            return find(request.body)
+        case ("GET", "/windows"):
+            return windows(app: request.query["app"], title: request.query["title"])
         case ("POST", "/clear"):
             overlay.clear()
             return .json(OKResponse())
@@ -42,12 +46,38 @@ final class CommandRouter {
         }
     }
 
+    private func decodeRequest(_ body: Data) -> Result<HighlightRequest, Error> {
+        Result { try JSONDecoder().decode(HighlightRequest.self, from: body) }
+    }
+
+    private func find(_ body: Data) -> HTTPResponse {
+        switch decodeRequest(body) {
+        case .failure(let error):
+            return .error("invalid HighlightRequest: \(error)", status: 400)
+        case .success(var request):
+            request.activate = false
+            return .json(resolver.resolve(request))
+        }
+    }
+
+    private func windows(app: String?, title: String?) -> HTTPResponse {
+        let records: [WindowRecord]
+        if let app, !app.isEmpty {
+            guard let running = AppLocator.locate(app) else { return .error("app not found: \(app)", status: 404) }
+            records = WindowFinder.windows(of: running, titleRegex: title)
+        } else {
+            records = WindowFinder.all()
+        }
+        return .json(WindowsResponse(ok: true, windows: records.map(\.info)))
+    }
+
     private func highlight(_ body: Data) -> HTTPResponse {
         let request: HighlightRequest
-        do {
-            request = try JSONDecoder().decode(HighlightRequest.self, from: body)
-        } catch {
+        switch decodeRequest(body) {
+        case .failure(let error):
             return .error("invalid HighlightRequest: \(error)", status: 400)
+        case .success(let decoded):
+            request = decoded
         }
         let response = resolver.resolve(request)
         if !response.resolved.isEmpty {
