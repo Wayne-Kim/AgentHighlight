@@ -7,24 +7,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let resolver = TargetResolver()
     private var statusItem: NSStatusItem?
     private var server: HTTPServer?
-    private var escapeMonitor: Any?
+    private var escapeInterceptor: EscapeInterceptor?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        installStatusItem()
+        let port = Defaults.port(from: ProcessInfo.processInfo.environment)
+        exitIfAnotherInstanceAnswers(port: port)
+        installStatusItem(port: port)
         promptForAccessibilityIfNeeded()
-        installEscapeMonitor()
-        startServer()
+        installEscapeInterceptor()
+        startServer(port: port)
     }
 
-    private func installEscapeMonitor() {
-        escapeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard event.keyCode == 53 else { return }
-            self?.overlay.clear()
-        }
+    private func exitIfAnotherInstanceAnswers(port: Int) {
+        let request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/health")!, timeoutInterval: 0.7)
+        let semaphore = DispatchSemaphore(value: 0)
+        var answered = false
+        URLSession.shared.dataTask(with: request) { _, response, _ in
+            answered = (response as? HTTPURLResponse)?.statusCode == 200
+            semaphore.signal()
+        }.resume()
+        semaphore.wait()
+        guard answered else { return }
+        fputs("AgentHighlight: another instance already answers on port \(port)\n", stderr)
+        exit(2)
     }
 
-    private func installStatusItem() {
+    private func installStatusItem(port: Int) {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(systemSymbolName: "scope", accessibilityDescription: "AgentHighlight")
 
@@ -32,7 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "하이라이트 지우기", action: #selector(clearHighlights), keyEquivalent: "")
         menu.addItem(withTitle: "접근성 권한 열기...", action: #selector(openAccessibilitySettings), keyEquivalent: "")
         menu.addItem(.separator())
-        menu.addItem(withTitle: "포트 \(Defaults.port(from: ProcessInfo.processInfo.environment))", action: nil, keyEquivalent: "")
+        menu.addItem(withTitle: "포트 \(port)", action: nil, keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "종료", action: #selector(quit), keyEquivalent: "q")
         for menuItem in menu.items { menuItem.target = self }
@@ -45,8 +54,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AXIsProcessTrustedWithOptions(options)
     }
 
-    private func startServer() {
-        let port = Defaults.port(from: ProcessInfo.processInfo.environment)
+    private func installEscapeInterceptor() {
+        let interceptor = EscapeInterceptor { [weak self] in self?.overlay.clear() }
+        overlay.visibilityHandler = { visible in interceptor.setActive(visible) }
+        escapeInterceptor = interceptor
+    }
+
+    private func startServer(port: Int) {
         let router = CommandRouter(overlay: overlay, resolver: resolver, port: port)
         do {
             let server = try HTTPServer(port: UInt16(port), handler: router.handle)
