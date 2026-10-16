@@ -145,15 +145,33 @@ enum Commands {
         } catch {
             return Output.fail("cannot open url: \(error.localizedDescription)", code: ExitCode.appUnavailable)
         }
-        let wait = args.double("wait") ?? 2.5
-        if wait > 0 { usleep(UInt32(wait * 1_000_000)) }
+        let browser = args.option("app") ?? "Google Chrome"
+        let title = args.option("title") ?? #"Figma(\s*-|$)"#
+        let titleAppeared = waitForWindow(app: browser, title: title, seconds: args.double("wait") ?? 10, client: client)
         let target = Target(
             kind: .window,
-            app: args.option("app") ?? "Google Chrome",
-            title: args.option("title") ?? "Figma",
+            app: browser,
+            title: titleAppeared ? title : nil,
             label: args.option("label") ?? "Figma: 선택된 노드(파란 테두리)를 보세요"
         )
-        return highlight(makeRequest(args, targets: [target]), client: client)
+        var request = makeRequest(args, targets: [target])
+        request.duration = request.duration ?? 15
+        return highlight(request, client: client)
+    }
+
+    private static func waitForWindow(app: String, title: String, seconds: Double, client: Client) -> Bool {
+        guard (try? AppLauncher.ensureRunning(client: client)) != nil else { return false }
+        let deadline = Date().addingTimeInterval(seconds)
+        repeat {
+            if let (status, data) = try? client.get("/windows", query: ["app": app, "title": title]),
+               status == 200,
+               let response = try? JSONDecoder().decode(WindowsResponse.self, from: data),
+               !response.windows.isEmpty {
+                return true
+            }
+            usleep(500_000)
+        } while Date() < deadline
+        return false
     }
 
     private static func json(_ args: Arguments, client: Client) -> Int32 {
