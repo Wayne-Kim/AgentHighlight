@@ -36,8 +36,10 @@ struct AXElement {
     }
 
     var frame: CGRect? {
-        guard let position: CGPoint = axValue(kAXPositionAttribute, type: .cgPoint, initial: .zero),
-              let size: CGSize = axValue(kAXSizeAttribute, type: .cgSize, initial: .zero) else { return nil }
+        var position = CGPoint.zero
+        var size = CGSize.zero
+        guard let positionValue = axValue(kAXPositionAttribute), AXValueGetValue(positionValue, .cgPoint, &position),
+              let sizeValue = axValue(kAXSizeAttribute), AXValueGetValue(sizeValue, .cgSize, &size) else { return nil }
         return CGRect(origin: position, size: size)
     }
 
@@ -67,12 +69,10 @@ struct AXElement {
         AXUIElementSetMessagingTimeout(raw, seconds)
     }
 
-    private func axValue<T>(_ name: String, type: AXValueType, initial: T) -> T? {
+    private func axValue(_ name: String) -> AXValue? {
         var value: AnyObject?
         guard AXUIElementCopyAttributeValue(raw, name as CFString, &value) == .success,
               let value, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
-        var result = initial
-        guard AXValueGetValue(value as! AXValue, type, &result) else { return nil }
-        return result
+        return (value as! AXValue)
     }
 }
