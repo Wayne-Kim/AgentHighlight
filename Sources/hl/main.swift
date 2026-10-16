@@ -1,4 +1,3 @@
 import Foundation
-import HighlightKit
 
-print("hl \(Defaults.version)")
+exit(Commands.run(Array(CommandLine.arguments.dropFirst())))
