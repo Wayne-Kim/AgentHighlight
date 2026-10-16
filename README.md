@@ -15,7 +15,8 @@ make install
 ```
 
 - release 빌드 -> `~/Applications/AgentHighlight.app`(Apple Development 인증서가 있으면 그걸로, 없으면
-  ad-hoc 서명) -> `hl` 을 `/usr/local/bin` 또는 `~/.local/bin` 에 복사 -> 앱 실행 -> `hl doctor`.
+  ad-hoc 서명) -> `hl` 을 `/usr/local/bin` 또는 `~/.local/bin` 에 복사 -> `~/.claude/skills/` 가 있으면
+  에이전트용 스킬 `agent-highlight` 를 링크 -> 앱 실행 -> `hl doctor`.
 - 첫 실행 때 접근성 권한 창이 뜬다. 시스템 설정 > 개인정보 보호 및 보안 > 손쉬운 사용에서
   AgentHighlight 를 켠다. 메뉴바 아이콘의 "접근성 권한 열기..." 로도 갈 수 있다. 권한이 없어도 좌표
   가리키기와 제목 필터 없는 창 가리키기는 되고, 문구 탐색(`hl text`)과 창 제목 필터는 막힌다.

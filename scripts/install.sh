@@ -29,6 +29,11 @@ fi
 cp "$ROOT/.build/release/hl" "$BIN_DIR/hl"
 chmod +x "$BIN_DIR/hl"
 
+if [ -d "$HOME/.claude/skills" ]; then
+  ln -sfn "$ROOT/skills/agent-highlight" "$HOME/.claude/skills/agent-highlight"
+  echo "skill: $HOME/.claude/skills/agent-highlight -> $ROOT/skills/agent-highlight"
+fi
+
 open -a "$APP_TARGET"
 sleep 1.5
 

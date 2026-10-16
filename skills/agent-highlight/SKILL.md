@@ -18,7 +18,8 @@ description: 사람이 보고 있는 화면(Chrome 에 열린 문서, Figma, 아
 
 ## 전제
 
-- `hl doctor` 가 `appRunning: true` 여야 한다. 앱이 꺼져 있으면 `hl` 이 알아서 띄운다.
+- `hl doctor` 가 `appRunning: true` 여야 한다. 앱이 꺼져 있으면 `hl` 이 알아서 띄운다. `hl` 이 PATH 에
+  없으면 `~/.local/bin/hl` 또는 `/usr/local/bin/hl` 을 그대로 부른다.
 - `trusted: false` 면 문구 탐색(`hl text`)과 창 제목 필터(`--title`)가 안 된다. 사람에게 시스템 설정 >
   개인정보 보호 및 보안 > 손쉬운 사용에서 AgentHighlight 를 켜 달라고 한 번 요청한다. 좌표 가리키기
   (`hl rect`)와 제목 필터 없는 창 가리키기는 권한 없이도 된다.
