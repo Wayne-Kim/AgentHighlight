@@ -3,6 +3,9 @@ import ApplicationServices
 import HighlightKit
 
 final class TargetResolver {
+    private static let requestTimeLimit: TimeInterval = 6
+    private static let sparseTreeThreshold = 50
+
     private struct Activation {
         let app: NSRunningApplication
         let window: AXElement?
@@ -12,9 +15,10 @@ final class TargetResolver {
         var resolved: [ResolvedTarget] = []
         var errors: [TargetError] = []
         var activations: [Activation] = []
+        let deadline = Date().addingTimeInterval(Self.requestTimeLimit)
 
         for (index, target) in request.targets.enumerated() {
-            switch resolveTarget(target, index: index) {
+            switch resolveTarget(target, index: index, deadline: deadline) {
             case .success(let outcome):
                 resolved.append(outcome.target)
                 if let activation = outcome.activation { activations.append(activation) }
@@ -36,7 +40,7 @@ final class TargetResolver {
         let message: String
     }
 
-    private func resolveTarget(_ target: Target, index: Int) -> Result<Outcome, ResolveError> {
+    private func resolveTarget(_ target: Target, index: Int, deadline: Date) -> Result<Outcome, ResolveError> {
         switch target.kind {
         case .rect:
             guard let rect = target.rect else { return .failure(ResolveError(message: "rect target requires rect")) }
@@ -44,11 +48,29 @@ final class TargetResolver {
         case .window:
             return resolveWindow(target, index: index)
         case .element:
-            return resolveElement(target, index: index)
+            return resolveElement(target, index: index, deadline: deadline)
         }
     }
 
-    private func resolveElement(_ target: Target, index: Int) -> Result<Outcome, ResolveError> {
+    private func resolveWindow(_ target: Target, index: Int) -> Result<Outcome, ResolveError> {
+        guard let app = AppLocator.locate(target.app) else {
+            return .failure(ResolveError(message: "app not found: \(target.app ?? "frontmost")"))
+        }
+        guard let window = WindowFinder.windows(of: app, titleRegex: target.title).first else {
+            let filter = target.title.map { " matching title /\($0)/" } ?? ""
+            return .failure(ResolveError(message: "no window\(filter) in \(app.localizedName ?? "app")"))
+        }
+        let resolved = ResolvedTarget(
+            index: index,
+            label: target.label,
+            rect: Rect(window.rect),
+            app: window.app,
+            windowTitle: window.title
+        )
+        return .success(Outcome(target: resolved, activation: Activation(app: app, window: window.axWindow)))
+    }
+
+    private func resolveElement(_ target: Target, index: Int, deadline: Date) -> Result<Outcome, ResolveError> {
         guard let text = target.text, !text.isEmpty else {
             return .failure(ResolveError(message: "element target requires text"))
         }
@@ -58,13 +80,14 @@ final class TargetResolver {
         AXElement.application(pid: app.processIdentifier).enableWebAccessibility()
 
         let matcher = TextMatcher(query: text, mode: target.match ?? .contains)
-        var matches = ElementFinder.find(app: app, windowTitle: target.title, matcher: matcher, role: target.role)
-        if matches.isEmpty {
+        var result = ElementFinder.find(app: app, windowTitle: target.title, matcher: matcher, role: target.role, deadline: deadline)
+        if result.matches.isEmpty, result.visitedNodes < Self.sparseTreeThreshold, Date() < deadline {
             usleep(300_000)
-            matches = ElementFinder.find(app: app, windowTitle: target.title, matcher: matcher, role: target.role)
+            result = ElementFinder.find(app: app, windowTitle: target.title, matcher: matcher, role: target.role, deadline: deadline)
         }
+        let matches = result.matches
         let position = target.index ?? 0
-        guard position < matches.count else {
+        guard position >= 0, position < matches.count else {
             let appName = app.localizedName ?? "app"
             return .failure(ResolveError(message: "no element matching \"\(text)\" in \(appName) (found \(matches.count))"))
         }
@@ -91,41 +114,34 @@ final class TargetResolver {
         return .success(Outcome(target: resolved, activation: Activation(app: app, window: match.window)))
     }
 
-    private func resolveWindow(_ target: Target, index: Int) -> Result<Outcome, ResolveError> {
-        guard let app = AppLocator.locate(target.app) else {
-            return .failure(ResolveError(message: "app not found: \(target.app ?? "frontmost")"))
-        }
-        guard let window = WindowFinder.windows(of: app, titleRegex: target.title).first else {
-            let filter = target.title.map { " matching title /\($0)/" } ?? ""
-            return .failure(ResolveError(message: "no window\(filter) in \(app.localizedName ?? "app")"))
-        }
-        let resolved = ResolvedTarget(
-            index: index,
-            label: target.label,
-            rect: Rect(window.rect),
-            app: window.app,
-            windowTitle: window.title
-        )
-        return .success(Outcome(target: resolved, activation: Activation(app: app, window: window.axWindow)))
-    }
-
     private func needsScroll(_ rect: CGRect, within windowFrame: CGRect) -> Bool {
         rect.width <= 1 || rect.height <= 1 || !windowFrame.contains(rect)
     }
 
     private func scrollIntoView(_ element: AXElement, from original: CGRect) -> CGRect {
         guard element.perform("AXScrollToVisible") else { return original }
-        for _ in 0..<6 {
+        var previous: CGRect?
+        for _ in 0..<8 {
             usleep(100_000)
-            if let frame = element.frame, frame.height > 1, frame.width > 1, frame != original { return frame }
+            guard let frame = element.frame, frame.height > 1, frame.width > 1, frame != original else { continue }
+            if frame == previous { return frame }
+            previous = frame
         }
-        return element.frame ?? original
+        return previous ?? element.frame ?? original
     }
 
     private func activate(_ activations: [Activation]) {
-        for activation in activations {
-            _ = activation.window?.perform(kAXRaiseAction)
+        guard !activations.isEmpty else { return }
+        let work = {
+            for activation in activations {
+                _ = activation.window?.perform(kAXRaiseAction)
+            }
+            if let last = activations.last {
+                let application = AXElement.application(pid: last.app.processIdentifier)
+                AXUIElementSetAttributeValue(application.raw, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+                last.app.activate()
+            }
         }
-        activations.last?.app.activate()
+        if Thread.isMainThread { work() } else { DispatchQueue.main.sync(execute: work) }
     }
 }

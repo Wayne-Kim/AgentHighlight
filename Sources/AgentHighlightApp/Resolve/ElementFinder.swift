@@ -7,9 +7,15 @@ struct ElementMatch {
     let text: String
     let role: String
     let score: Int
+    let insideWebArea: Bool
     let window: AXElement
     let windowTitle: String
     let windowFrame: CGRect
+}
+
+struct ElementSearchResult {
+    let matches: [ElementMatch]
+    let visitedNodes: Int
 }
 
 enum ElementFinder {
@@ -20,37 +26,49 @@ enum ElementFinder {
         kAXRoleAttribute, kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute, kAXChildrenAttribute,
     ] as CFArray
 
+    private static let containerRoles: Set<String> = [kAXWindowRole, "AXWebArea", kAXSheetRole, kAXDrawerRole]
+
+    private struct Frame {
+        let element: AXElement
+        let insideWebArea: Bool
+    }
+
     static func find(
         app: NSRunningApplication,
         windowTitle: String?,
         matcher: TextMatcher,
         role: String?,
+        deadline: Date? = nil,
         limit: Int = 20
-    ) -> [ElementMatch] {
-        let deadline = Date().addingTimeInterval(timeLimit)
+    ) -> ElementSearchResult {
+        let ownDeadline = Date().addingTimeInterval(timeLimit)
+        let effectiveDeadline = deadline.map { min($0, ownDeadline) } ?? ownDeadline
         var visited = 0
         var matches: [ElementMatch] = []
 
         for window in WindowFinder.windows(of: app, titleRegex: windowTitle) {
             guard let axWindow = window.axWindow else { continue }
-            var stack: [AXElement] = [axWindow]
-            while let element = stack.popLast() {
+            var stack = [Frame(element: axWindow, insideWebArea: false)]
+            while let frame = stack.popLast() {
                 visited += 1
-                if visited > nodeLimit || Date() > deadline { break }
-                let snapshot = read(element)
-                stack.append(contentsOf: snapshot.children.reversed())
+                if visited > nodeLimit || Date() > effectiveDeadline { break }
+                let snapshot = read(frame.element)
+                let childrenInsideWebArea = frame.insideWebArea || snapshot.role == "AXWebArea"
+                stack.append(contentsOf: snapshot.children.reversed().map { Frame(element: $0, insideWebArea: childrenInsideWebArea) })
 
-                guard role == nil || snapshot.role == role,
+                guard !containerRoles.contains(snapshot.role),
+                      role == nil || snapshot.role == role,
                       let text = snapshot.text,
                       let score = matcher.score(text),
-                      let frame = element.frame, frame.width > 0, frame.height > 0
+                      let elementFrame = frame.element.frame, elementFrame.width > 0, elementFrame.height > 0
                 else { continue }
                 matches.append(ElementMatch(
-                    element: element,
-                    rect: frame,
+                    element: frame.element,
+                    rect: elementFrame,
                     text: text,
                     role: snapshot.role,
                     score: score,
+                    insideWebArea: frame.insideWebArea,
                     window: axWindow,
                     windowTitle: window.title,
                     windowFrame: window.rect
@@ -59,10 +77,11 @@ enum ElementFinder {
         }
 
         matches.sort { lhs, rhs in
+            if lhs.insideWebArea != rhs.insideWebArea { return lhs.insideWebArea }
             if lhs.score != rhs.score { return lhs.score > rhs.score }
             return lhs.text.count < rhs.text.count
         }
-        return Array(matches.prefix(limit))
+        return ElementSearchResult(matches: Array(matches.prefix(limit)), visitedNodes: visited)
     }
 
     private struct Snapshot {

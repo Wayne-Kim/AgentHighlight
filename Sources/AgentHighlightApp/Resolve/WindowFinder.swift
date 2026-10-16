@@ -20,6 +20,13 @@ enum WindowFinder {
     private static let messagingTimeout: Float = 1.5
 
     static func windows(of app: NSRunningApplication, titleRegex: String?) -> [WindowRecord] {
+        let regex = titleRegex.flatMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
+        let accessible = accessibilityWindows(of: app)
+        let candidates = accessible.isEmpty ? all().filter { $0.pid == app.processIdentifier } : accessible
+        return candidates.filter { regex == nil || matches(regex!, $0.title) }
+    }
+
+    private static func accessibilityWindows(of app: NSRunningApplication) -> [WindowRecord] {
         let application = AXElement.application(pid: app.processIdentifier)
         application.setMessagingTimeout(messagingTimeout)
         let focused = application.focusedWindow
@@ -27,16 +34,13 @@ enum WindowFinder {
         if let focused, let index = ordered.firstIndex(where: { CFEqual($0.raw, focused.raw) }) {
             ordered.insert(ordered.remove(at: index), at: 0)
         }
-        let regex = titleRegex.flatMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
         return ordered.compactMap { window in
             guard !window.isMinimized, let frame = window.frame, frame.width > 0, frame.height > 0 else { return nil }
-            let title = window.title ?? ""
-            if let regex, !matches(regex, title) { return nil }
             return WindowRecord(
                 pid: app.processIdentifier,
                 app: app.localizedName ?? "",
                 bundleID: app.bundleIdentifier,
-                title: title,
+                title: window.title ?? "",
                 rect: frame,
                 onScreen: true,
                 axWindow: window
