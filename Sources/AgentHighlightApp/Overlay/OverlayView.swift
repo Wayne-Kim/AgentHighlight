@@ -24,10 +24,14 @@ final class OverlayView: NSView {
         clearContents()
         let holes = items.map { $0.rect.insetBy(dx: -Defaults.padding, dy: -Defaults.padding) }
         renderDim(holes: holes, enabled: style.dim)
-        for (item, hole) in zip(items, holes) {
+        var placedLabels: [CGRect] = []
+        for (index, (item, hole)) in zip(items, holes).enumerated() {
             addStrokes(for: hole, color: style.color)
             addRipple(for: hole, color: style.color)
-            addLabel(for: item, hole: hole, color: style.color)
+            let otherHoles = holes.enumerated().filter { $0.offset != index }.map(\.element)
+            if let labelFrame = addLabel(for: item, hole: hole, color: style.color, avoiding: otherHoles + placedLabels) {
+                placedLabels.append(labelFrame)
+            }
         }
     }
 
@@ -90,11 +94,12 @@ final class OverlayView: NSView {
         ripple.add(group, forKey: "ripple")
     }
 
-    private func addLabel(for item: OverlayItem, hole: CGRect, color: NSColor) {
-        guard item.label != nil || item.number != nil else { return }
+    private func addLabel(for item: OverlayItem, hole: CGRect, color: NSColor, avoiding obstacles: [CGRect]) -> CGRect? {
+        guard item.label != nil || item.number != nil else { return nil }
         let label = LabelView(text: item.label, number: item.number, badgeColor: color)
-        label.frame = LabelLayout.frame(for: label.frame.size, target: hole, in: bounds)
+        label.frame = LabelLayout.frame(for: label.frame.size, target: hole, avoiding: obstacles, in: bounds)
         addSubview(label)
+        return label.frame
     }
 
     private func roundedPath(_ rect: CGRect, radius: CGFloat) -> CGPath {
