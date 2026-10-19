@@ -37,7 +37,7 @@ final class StepTour {
     }
 
     func start(_ request: HighlightRequest) -> HighlightResponse {
-        let checked = resolver.resolve(probe(request))
+        let checked = resolver.resolve(probe(request), opensLinks: false)
         let found = Set(checked.resolved.map(\.index))
         let reachable = request.targets.enumerated()
             .filter { found.contains($0.offset) }

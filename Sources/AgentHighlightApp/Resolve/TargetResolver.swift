@@ -5,20 +5,23 @@ import HighlightKit
 final class TargetResolver {
     private static let requestTimeLimit: TimeInterval = 6
     private static let sparseTreeThreshold = 50
+    private static let figmaBrowser = "Google Chrome"
+    private static let figmaWindowTitle = #"Figma(\s*-|$)"#
+    private static let figmaLoadTimeLimit: TimeInterval = 10
 
     private struct Activation {
         let app: NSRunningApplication
         let window: AXElement?
     }
 
-    func resolve(_ request: HighlightRequest) -> HighlightResponse {
+    func resolve(_ request: HighlightRequest, opensLinks: Bool = true) -> HighlightResponse {
         var resolved: [ResolvedTarget] = []
         var errors: [TargetError] = []
         var activations: [Activation] = []
         let deadline = Date().addingTimeInterval(Self.requestTimeLimit)
 
         for (index, target) in request.targets.enumerated() {
-            switch resolveTarget(target, index: index, deadline: deadline) {
+            switch resolveTarget(target, index: index, deadline: deadline, opensLinks: opensLinks) {
             case .success(let outcome):
                 resolved.append(outcome.target)
                 if let activation = outcome.activation { activations.append(activation) }
@@ -40,7 +43,7 @@ final class TargetResolver {
         let message: String
     }
 
-    private func resolveTarget(_ target: Target, index: Int, deadline: Date) -> Result<Outcome, ResolveError> {
+    private func resolveTarget(_ target: Target, index: Int, deadline: Date, opensLinks: Bool) -> Result<Outcome, ResolveError> {
         switch target.kind {
         case .rect:
             guard let rect = target.rect else { return .failure(ResolveError(message: "rect target requires rect")) }
@@ -49,7 +52,51 @@ final class TargetResolver {
             return resolveWindow(target, index: index)
         case .element:
             return resolveElement(target, index: index, deadline: deadline)
+        case .figma:
+            return resolveFigma(target, index: index, opensLinks: opensLinks)
         }
+    }
+
+    private func resolveFigma(_ target: Target, index: Int, opensLinks: Bool) -> Result<Outcome, ResolveError> {
+        guard let url = target.url.flatMap(URL.init(string:)), url.scheme != nil else {
+            return .failure(ResolveError(message: "figma target requires url"))
+        }
+        let browser = target.app ?? Self.figmaBrowser
+        var window = target
+        window.kind = .window
+        window.app = browser
+        window.title = target.title ?? Self.figmaWindowTitle
+        guard opensLinks else {
+            let pending = ResolvedTarget(index: index, label: target.label, rect: Rect(.zero), app: browser, matchedText: url.absoluteString)
+            return .success(Outcome(target: pending, activation: nil))
+        }
+        guard open(url, in: browser, besides: window) else {
+            return .failure(ResolveError(message: "cannot open \(url.absoluteString) in \(browser)"))
+        }
+        let deadline = Date().addingTimeInterval(Self.figmaLoadTimeLimit)
+        var result = resolveWindow(window, index: index)
+        while case .failure = result, Date() < deadline {
+            usleep(500_000)
+            result = resolveWindow(window, index: index)
+        }
+        return result
+    }
+
+    private func open(_ url: URL, in app: String, besides window: Target) -> Bool {
+        let arguments: [String]
+        if case .success(let existing) = resolveWindow(window, index: 0), let activation = existing.activation {
+            activate([activation])
+            usleep(200_000)
+            arguments = ["-a", app]
+        } else {
+            arguments = ["-na", app, "--args", "--new-window"]
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = arguments + [url.absoluteString]
+        guard (try? process.run()) != nil else { return false }
+        process.waitUntilExit()
+        return process.terminationStatus == 0
     }
 
     private func resolveWindow(_ target: Target, index: Int) -> Result<Outcome, ResolveError> {

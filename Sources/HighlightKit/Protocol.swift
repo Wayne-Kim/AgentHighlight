@@ -27,6 +27,7 @@ public enum TargetKind: String, Codable, Equatable {
     case rect
     case window
     case element
+    case figma
 }
 
 public enum MatchMode: String, Codable, Equatable {
@@ -47,6 +48,7 @@ public struct Target: Codable, Equatable {
     public var label: String?
     public var note: String?
     public var scroll: Bool?
+    public var url: String?
 
     public init(
         kind: TargetKind,
@@ -59,7 +61,8 @@ public struct Target: Codable, Equatable {
         index: Int? = nil,
         label: String? = nil,
         note: String? = nil,
-        scroll: Bool? = nil
+        scroll: Bool? = nil,
+        url: String? = nil
     ) {
         self.kind = kind
         self.rect = rect
@@ -72,6 +75,7 @@ public struct Target: Codable, Equatable {
         self.label = label
         self.note = note
         self.scroll = scroll
+        self.url = url
     }
 }
 

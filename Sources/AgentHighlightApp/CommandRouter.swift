@@ -71,6 +71,7 @@ final class CommandRouter {
             if let position = target.index, position < 0 { return "targets[\(index)].index must be >= 0" }
             if target.kind == .rect, target.rect == nil { return "targets[\(index)] requires rect" }
             if target.kind == .element, (target.text ?? "").isEmpty { return "targets[\(index)] requires text" }
+            if target.kind == .figma, (target.url ?? "").isEmpty { return "targets[\(index)] requires url" }
         }
         return nil
     }
@@ -81,7 +82,7 @@ final class CommandRouter {
             return .error("invalid HighlightRequest: \(error)", status: 400)
         case .success(var request):
             request.activate = false
-            return .json(resolver.resolve(request))
+            return .json(resolver.resolve(request, opensLinks: false))
         }
     }
 
