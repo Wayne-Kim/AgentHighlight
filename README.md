@@ -8,6 +8,8 @@ Chrome 에 열린 문서(Confluence, GitHub 마크다운)는 접근성 트리로
 화면 밖이면 스크롤해 보이게 한다. Figma 링크는 node-id 로 열어 Figma 가 노드를 선택·확대하게 하고
 창 위에 라벨을 띄운다.
 
+사람을 위한 사용 안내는 [docs/usage.md](docs/usage.md) 에 있다.
+
 ## 설치
 
 ```bash
