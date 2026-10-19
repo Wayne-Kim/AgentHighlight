@@ -29,10 +29,17 @@ fi
 cp "$ROOT/.build/release/hl" "$BIN_DIR/hl"
 chmod +x "$BIN_DIR/hl"
 
-if [ -d "$HOME/.claude/skills" ]; then
-  ln -sfn "$ROOT/skills/agent-highlight" "$HOME/.claude/skills/agent-highlight"
-  echo "skill: $HOME/.claude/skills/agent-highlight -> $ROOT/skills/agent-highlight"
-fi
+SHARED_SKILL="$HOME/.agents/skills/agent-highlight"
+mkdir -p "$HOME/.agents/skills"
+ln -sfn "$ROOT/skills/agent-highlight" "$SHARED_SKILL"
+echo "skill: $SHARED_SKILL -> $ROOT/skills/agent-highlight"
+for AGENT_SKILLS in "$HOME/.claude/skills" "$HOME/.codex/skills" "$HOME/.factory/skills" "$HOME/.copilot/skills" "$HOME/.config/opencode/skills" "$HOME/.cursor/skills" "$HOME/.gemini/skills"; do
+  AGENT_HOME="$(dirname "$AGENT_SKILLS")"
+  [ -d "$AGENT_HOME" ] || continue
+  mkdir -p "$AGENT_SKILLS"
+  ln -sfn "$SHARED_SKILL" "$AGENT_SKILLS/agent-highlight"
+  echo "skill: $AGENT_SKILLS/agent-highlight"
+done
 
 open -a "$APP_TARGET"
 sleep 1.5
