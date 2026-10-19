@@ -1,16 +1,31 @@
 import AppKit
 import CoreGraphics
 
-final class EscapeInterceptor {
-    private static let escapeKeyCode: Int64 = 53
+enum InterceptedKey {
+    case escape
+    case left
+    case right
 
-    private let onEscape: () -> Void
+    init?(keyCode: Int64) {
+        switch keyCode {
+        case 53: self = .escape
+        case 123: self = .left
+        case 124: self = .right
+        default: return nil
+        }
+    }
+}
+
+final class KeyInterceptor {
+    private static let modifierMask: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl, .maskShift]
+
+    private let onKey: (InterceptedKey) -> Bool
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var fallbackMonitor: Any?
 
-    init(onEscape: @escaping () -> Void) {
-        self.onEscape = onEscape
+    init(onKey: @escaping (InterceptedKey) -> Bool) {
+        self.onKey = onKey
     }
 
     func setActive(_ active: Bool) {
@@ -26,7 +41,7 @@ final class EscapeInterceptor {
         let userInfo = Unmanaged.passUnretained(self).toOpaque()
         let callback: CGEventTapCallBack = { _, type, event, userInfo in
             guard let userInfo else { return Unmanaged.passUnretained(event) }
-            return Unmanaged<EscapeInterceptor>.fromOpaque(userInfo).takeUnretainedValue().handle(type: type, event: event)
+            return Unmanaged<KeyInterceptor>.fromOpaque(userInfo).takeUnretainedValue().handle(type: type, event: event)
         }
         guard let created = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -58,18 +73,21 @@ final class EscapeInterceptor {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return Unmanaged.passUnretained(event)
         }
-        guard type == .keyDown, event.getIntegerValueField(.keyboardEventKeycode) == Self.escapeKeyCode else {
+        guard type == .keyDown,
+              event.flags.intersection(Self.modifierMask).isEmpty,
+              let key = InterceptedKey(keyCode: event.getIntegerValueField(.keyboardEventKeycode)),
+              onKey(key) else {
             return Unmanaged.passUnretained(event)
         }
-        DispatchQueue.main.async(execute: onEscape)
         return nil
     }
 
     private func installFallbackMonitor() {
         guard fallbackMonitor == nil else { return }
         fallbackMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard event.keyCode == UInt16(Self.escapeKeyCode) else { return }
-            self?.onEscape()
+            guard event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
+                  let key = InterceptedKey(keyCode: Int64(event.keyCode)) else { return }
+            _ = self?.onKey(key)
         }
     }
 }

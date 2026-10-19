@@ -30,6 +30,8 @@ hl figma "https://www.figma.com/design/<file>?node-id=1-2" --label "(2) 가입 �
 hl window --app "Google Chrome" --title "JIRA" --label "Jira 창"
 hl rect 200 200 400 120 --label "좌표로 가리키기"
 hl json '{"targets":[{"kind":"element","app":"Google Chrome","text":"검색바"},{"kind":"rect","rect":{"x":10,"y":10,"width":100,"height":40}}],"duration":20}'
+hl steps '{"targets":[{"kind":"element","app":"Google Chrome","text":"요청 필드","label":"요청","note":"여기서 볼 것"},{"kind":"element","app":"Google Chrome","text":"응답 필드","label":"응답"}]}'
+hl next; hl prev; hl status
 hl find "PROJ-123" --app "Google Chrome"
 hl windows --app chrome
 hl clear
@@ -40,6 +42,10 @@ hl doctor
 뒤 사라지고, Esc 나 `hl clear` 로 바로 지운다. 하이라이트가 떠 있는 동안의 Esc 한 번은 지우는 데만
 쓰이고 앞 앱에는 전달되지 않는다. 앱은 같은 포트에 다른 인스턴스가 이미 응답하면 바로 종료한다. 좌표계는 주 모니터 왼쪽 위 원점(접근성 API·CGWindowList
 와 같다). 에이전트용 사용 안내는 `skills/agent-highlight/SKILL.md` 에 있다.
+
+`hl steps` 는 대상을 한 번에 그리지 않고 한 단계씩 보여준다. 카드에 `n / 전체`, 제목(`label`), 볼
+것(`note`), 다음 단계 제목이 뜨고, 사람은 → 다음, ← 이전, Esc 종료로 넘긴다. 화살표는 지금 단계의 앱이
+맨 앞에 있을 때만 가로챈다. 단계마다 들어갈 때 대상을 다시 찾아 스크롤한다.
 
 ## HTTP 인터페이스
 
@@ -52,10 +58,13 @@ hl doctor
 | `POST /highlight` | `HighlightRequest` | `HighlightResponse` - 대상별 좌표(`resolved`)와 못 찾은 것(`errors`) |
 | `POST /find` | `HighlightRequest` | 같은 응답, 그리지 않고 앱도 앞으로 올리지 않는다 |
 | `GET /windows?app=&title=` | - | 창 목록과 좌표 |
+| `POST /steps` | `HighlightRequest` | `HighlightResponse` - 단계 진행을 시작하고 첫 단계를 그린다 |
+| `GET /steps` | - | `{ok, active, current, total, label}` |
+| `POST /steps/next`, `POST /steps/prev` | - | 넘긴 뒤의 `{ok, active, current, total, label}` |
 | `POST /clear` | - | `{ok}` |
 
 `HighlightRequest`: `targets[]`(`kind: rect|window|element`, `rect`, `app`, `title`, `text`, `role`,
-`match: contains|exact|regex`, `index`, `label`, `scroll`), `label`, `duration`, `activate`,
+`match: contains|exact|regex`, `index`, `label`, `note`, `scroll`), `label`, `duration`, `activate`,
 `style: {color, dim}`. 타입 정의는 `Sources/HighlightKit/Protocol.swift`.
 
 ## 개발

@@ -45,6 +45,7 @@ public struct Target: Codable, Equatable {
     public var match: MatchMode?
     public var index: Int?
     public var label: String?
+    public var note: String?
     public var scroll: Bool?
 
     public init(
@@ -57,6 +58,7 @@ public struct Target: Codable, Equatable {
         match: MatchMode? = nil,
         index: Int? = nil,
         label: String? = nil,
+        note: String? = nil,
         scroll: Bool? = nil
     ) {
         self.kind = kind
@@ -68,6 +70,7 @@ public struct Target: Codable, Equatable {
         self.match = match
         self.index = index
         self.label = label
+        self.note = note
         self.scroll = scroll
     }
 }
@@ -148,6 +151,22 @@ public struct HighlightResponse: Codable, Equatable {
         self.ok = ok
         self.resolved = resolved
         self.errors = errors
+    }
+}
+
+public struct StepsStatus: Codable, Equatable {
+    public var ok: Bool
+    public var active: Bool
+    public var current: Int?
+    public var total: Int?
+    public var label: String?
+
+    public init(ok: Bool = true, active: Bool, current: Int? = nil, total: Int? = nil, label: String? = nil) {
+        self.ok = ok
+        self.active = active
+        self.current = current
+        self.total = total
+        self.label = label
     }
 }
 

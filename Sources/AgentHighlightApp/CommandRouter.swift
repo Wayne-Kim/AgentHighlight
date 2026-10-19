@@ -9,11 +9,13 @@ struct OKResponse: Encodable {
 final class CommandRouter {
     private let overlay: OverlayController
     private let resolver: TargetResolver
+    private let tour: StepTour
     private let port: Int
 
-    init(overlay: OverlayController, resolver: TargetResolver, port: Int) {
+    init(overlay: OverlayController, resolver: TargetResolver, tour: StepTour, port: Int) {
         self.overlay = overlay
         self.resolver = resolver
+        self.tour = tour
         self.port = port
     }
 
@@ -33,8 +35,16 @@ final class CommandRouter {
             return find(request.body)
         case ("GET", "/windows"):
             return windows(app: request.query["app"], title: request.query["title"])
+        case ("POST", "/steps"):
+            return startSteps(request.body)
+        case ("GET", "/steps"):
+            return .json(onMain { tour.status })
+        case ("POST", "/steps/next"):
+            return .json(onMain { tour.move(by: 1); return tour.status })
+        case ("POST", "/steps/prev"):
+            return .json(onMain { tour.move(by: -1); return tour.status })
         case ("POST", "/clear"):
-            onMain { overlay.clear() }
+            onMain { tour.stop() }
             return .json(OKResponse())
         default:
             return .error("not found: \(request.method) \(request.path)", status: 404)
@@ -99,9 +109,21 @@ final class CommandRouter {
             let items = overlayItems(for: request, response: response)
             let style = OverlayStyle.from(request.style)
             let duration = request.duration ?? Defaults.duration
-            onMain { overlay.show(items, style: style, duration: duration) }
+            onMain {
+                tour.abandon()
+                overlay.show(items, style: style, duration: duration)
+            }
         }
         return .json(response)
+    }
+
+    private func startSteps(_ body: Data) -> HTTPResponse {
+        switch decodeRequest(body) {
+        case .failure(let error):
+            return .error("invalid HighlightRequest: \(error)", status: 400)
+        case .success(let request):
+            return .json(tour.start(request))
+        }
     }
 
     private func overlayItems(for request: HighlightRequest, response: HighlightResponse) -> [OverlayItem] {
@@ -117,11 +139,7 @@ final class CommandRouter {
         }
     }
 
-    private func onMain(_ work: () -> Void) {
-        if Thread.isMainThread {
-            work()
-        } else {
-            DispatchQueue.main.sync(execute: work)
-        }
+    private func onMain<T>(_ work: () -> T) -> T {
+        Thread.isMainThread ? work() : DispatchQueue.main.sync(execute: work)
     }
 }

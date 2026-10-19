@@ -28,6 +28,8 @@ enum Commands {
     hl rect <x> <y> <w> <h> [--label 라벨] ...
     hl figma <url> [--label 라벨] [--wait 초] [--app 브라우저]   링크를 열고 Figma 창을 가리킵니다
     hl json [<json> | -]                                        대상 여러 개를 한 번에 (HighlightRequest)
+    hl steps [<json> | -]                                       대상을 한 단계씩 (targets[].note 로 설명)
+    hl next | hl prev | hl status                               단계 넘기기, 지금 단계 확인
     hl find <문구> [--app 이름] ...                             그리지 않고 좌표만
     hl windows [--app 이름] [--title 정규식]
     hl clear
@@ -70,7 +72,15 @@ enum Commands {
         case "figma":
             return figma(args, client: client)
         case "json":
-            return json(args, client: client)
+            return json(args, client: client, path: "/highlight")
+        case "steps":
+            return json(args, client: client, path: "/steps")
+        case "next":
+            return withApp(client) { try client.post("/steps/next", OKBody()) }
+        case "prev":
+            return withApp(client) { try client.post("/steps/prev", OKBody()) }
+        case "status":
+            return withApp(client) { try client.get("/steps") }
         default:
             return Output.fail("unknown command: \(command)\n\(help)", code: ExitCode.usage)
         }
@@ -183,7 +193,7 @@ enum Commands {
         return false
     }
 
-    private static func json(_ args: Arguments, client: Client) -> Int32 {
+    private static func json(_ args: Arguments, client: Client, path: String) -> Int32 {
         let source = args.positionals.count >= 2 ? args.positionals[1] : "-"
         let data: Data
         if source == "-" {
@@ -195,7 +205,7 @@ enum Commands {
             return Output.fail("input is not a valid HighlightRequest JSON", code: ExitCode.usage)
         }
         return withApp(client, successCode: { $0.ok ? ExitCode.success : ExitCode.notFound }) {
-            try client.postRaw("/highlight", data)
+            try client.postRaw(path, data)
         }
     }
 

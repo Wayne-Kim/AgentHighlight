@@ -5,6 +5,16 @@ struct OverlayItem {
     var rect: CGRect
     var label: String?
     var number: Int?
+    var step: StepCard?
+}
+
+struct StepCard {
+    var number: Int
+    var total: Int
+    var title: String?
+    var note: String?
+    var nextTitle: String?
+    var hasPrevious: Bool
 }
 
 struct OverlayStyle {

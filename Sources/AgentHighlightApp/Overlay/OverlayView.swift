@@ -23,11 +23,13 @@ final class OverlayView: NSView {
     func render(items: [OverlayItem], style: OverlayStyle) {
         clearContents()
         let holes = items.map { $0.rect.insetBy(dx: -Defaults.padding, dy: -Defaults.padding) }
-        renderDim(holes: holes, enabled: style.dim)
+        renderDim(holes: zip(items, holes).filter { !$0.0.rect.isEmpty }.map(\.1), enabled: style.dim)
         var placedLabels: [CGRect] = []
         for (index, (item, hole)) in zip(items, holes).enumerated() {
-            addStrokes(for: hole, color: style.color)
-            addRipple(for: hole, color: style.color)
+            if !item.rect.isEmpty {
+                addStrokes(for: hole, color: style.color)
+                addRipple(for: hole, color: style.color)
+            }
             let otherHoles = holes.enumerated().filter { $0.offset != index }.map(\.element)
             if let labelFrame = addLabel(for: item, hole: hole, color: style.color, avoiding: otherHoles + placedLabels) {
                 placedLabels.append(labelFrame)
@@ -95,8 +97,14 @@ final class OverlayView: NSView {
     }
 
     private func addLabel(for item: OverlayItem, hole: CGRect, color: NSColor, avoiding obstacles: [CGRect]) -> CGRect? {
-        guard item.label != nil || item.number != nil else { return nil }
-        let label = LabelView(text: item.label, number: item.number, badgeColor: color)
+        let label: NSView
+        if let step = item.step {
+            label = StepCardView(card: step, badgeColor: color)
+        } else if item.label != nil || item.number != nil {
+            label = LabelView(text: item.label, number: item.number, badgeColor: color)
+        } else {
+            return nil
+        }
         label.frame = LabelLayout.frame(for: label.frame.size, target: hole, avoiding: obstacles, in: bounds)
         addSubview(label)
         return label.frame

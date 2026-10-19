@@ -48,7 +48,9 @@ final class OverlayController {
 
     private func place(_ item: OverlayItem, on screen: NSScreen, primaryHeight: CGFloat) -> OverlayItem? {
         let appKitRect = Coordinates.appKitRect(topLeft: item.rect, primaryHeight: primaryHeight)
-        guard appKitRect.intersects(screen.frame) else { return nil }
+        guard appKitRect.intersects(screen.frame) || (appKitRect.isEmpty && screen.frame.contains(appKitRect.origin)) else {
+            return nil
+        }
         var placed = item
         placed.rect = appKitRect.offsetBy(dx: -screen.frame.origin.x, dy: -screen.frame.origin.y)
         return placed

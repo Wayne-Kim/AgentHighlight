@@ -5,9 +5,10 @@ import HighlightKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let overlay = OverlayController()
     private let resolver = TargetResolver()
+    private lazy var tour = StepTour(overlay: overlay, resolver: resolver)
     private var statusItem: NSStatusItem?
     private var server: HTTPServer?
-    private var escapeInterceptor: EscapeInterceptor?
+    private var keyInterceptor: KeyInterceptor?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -15,7 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         exitIfAnotherInstanceAnswers(port: port)
         installStatusItem(port: port)
         promptForAccessibilityIfNeeded()
-        installEscapeInterceptor()
+        installKeyInterceptor()
         startServer(port: port)
     }
 
@@ -54,14 +55,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AXIsProcessTrustedWithOptions(options)
     }
 
-    private func installEscapeInterceptor() {
-        let interceptor = EscapeInterceptor { [weak self] in self?.overlay.clear() }
+    private func installKeyInterceptor() {
+        let interceptor = KeyInterceptor { [weak self] key in self?.handle(key) ?? false }
         overlay.visibilityHandler = { visible in interceptor.setActive(visible) }
-        escapeInterceptor = interceptor
+        keyInterceptor = interceptor
+    }
+
+    private func handle(_ key: InterceptedKey) -> Bool {
+        switch key {
+        case .escape:
+            tour.stop()
+            return true
+        case .left:
+            return tour.handleArrow(-1)
+        case .right:
+            return tour.handleArrow(1)
+        }
     }
 
     private func startServer(port: Int) {
-        let router = CommandRouter(overlay: overlay, resolver: resolver, port: port)
+        let router = CommandRouter(overlay: overlay, resolver: resolver, tour: tour, port: port)
         do {
             let server = try HTTPServer(port: UInt16(port), handler: router.handle)
             server.start { error in
@@ -76,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func clearHighlights() {
-        overlay.clear()
+        tour.stop()
     }
 
     @objc private func openAccessibilitySettings() {
