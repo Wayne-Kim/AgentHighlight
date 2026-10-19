@@ -1,6 +1,8 @@
 import Foundation
 
 struct Arguments {
+    private static let booleanFlags: Set<String> = ["check", "new-window", "help"]
+
     private(set) var positionals: [String] = []
     private(set) var flags: Set<String> = []
     private(set) var options: [String: String] = [:]
@@ -21,7 +23,7 @@ struct Arguments {
             let body = String(token.dropFirst(2))
             if let equals = body.firstIndex(of: "=") {
                 options[String(body[..<equals])] = String(body[body.index(after: equals)...])
-            } else if body.hasPrefix("no-") {
+            } else if body.hasPrefix("no-") || Self.booleanFlags.contains(body) {
                 flags.insert(body)
             } else if index + 1 < argv.count, !argv[index + 1].hasPrefix("--") {
                 options[body] = argv[index + 1]

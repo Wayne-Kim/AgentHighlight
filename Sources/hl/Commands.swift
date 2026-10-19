@@ -27,8 +27,11 @@ enum Commands {
     hl window --app 이름 [--title 정규식] [--label 라벨] ...
     hl rect <x> <y> <w> <h> [--label 라벨] ...
     hl figma <url> [--label 라벨] [--wait 초] [--app 브라우저]   링크를 열고 Figma 창을 가리킵니다
-    hl json [<json> | -]                                        대상 여러 개를 한 번에 (HighlightRequest)
-    hl steps [<json> | -]                                       대상을 한 단계씩 (targets[].note 로 설명)
+    hl open <url> [--app 브라우저] [--new-window] [--wait-title 정규식] [--wait 초]
+                                                                링크를 열고 제목이 맞는 창이 뜰 때까지 기다립니다
+    hl json [<json> | -] [--check]                              대상 여러 개를 한 번에 (HighlightRequest)
+    hl steps [<json> | -] [--check]                             대상을 한 단계씩 (targets[].note 로 설명)
+                                                                --check: 그리지 않고 단계마다 찾기 결과만
     hl next | hl prev | hl status                               단계 넘기기, 지금 단계 확인
     hl find <문구> [--app 이름] ...                             그리지 않고 좌표만
     hl windows [--app 이름] [--title 정규식]
@@ -71,6 +74,8 @@ enum Commands {
             return highlightRect(args, client: client)
         case "figma":
             return figma(args, client: client)
+        case "open":
+            return openLink(args, client: client)
         case "json":
             return json(args, client: client, path: "/highlight")
         case "steps":
@@ -150,18 +155,12 @@ enum Commands {
             return Output.fail("usage: hl figma <url> [--label 라벨] [--wait 초]", code: ExitCode.usage)
         }
         let browser = args.option("app") ?? "Google Chrome"
-        let open = Process()
-        open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        open.arguments = args.option("app").map { ["-a", $0, url.absoluteString] } ?? [url.absoluteString]
-        do {
-            try open.run()
-            open.waitUntilExit()
-        } catch {
-            return Output.fail("cannot open url: \(error.localizedDescription)", code: ExitCode.appUnavailable)
+        if let failure = open(url, arguments: args.option("app").map { ["-a", $0] } ?? []) {
+            return failure
         }
         let title = args.option("title") ?? #"Figma(\s*-|$)"#
         let wait = args.double("wait") ?? 10
-        guard waitForWindow(app: browser, title: title, seconds: wait, client: client) else {
+        guard !waitForWindows(app: browser, title: title, seconds: wait, client: client).isEmpty else {
             return Output.fail(
                 "no \(browser) window titled /\(title)/ appeared within \(Int(wait))s; the link may have opened in another browser - pass --app <browser> or --title <regex>",
                 code: ExitCode.notFound
@@ -178,19 +177,54 @@ enum Commands {
         return highlight(request, client: client)
     }
 
-    private static func waitForWindow(app: String, title: String, seconds: Double, client: Client) -> Bool {
-        guard (try? AppLauncher.ensureRunning(client: client)) != nil else { return false }
+    private static func openLink(_ args: Arguments, client: Client) -> Int32 {
+        guard args.positionals.count >= 2, let url = URL(string: args.positionals[1]), url.scheme != nil else {
+            return Output.fail("usage: hl open <url> [--app 브라우저] [--new-window] [--wait-title 정규식] [--wait 초]", code: ExitCode.usage)
+        }
+        let browser = args.option("app") ?? "Google Chrome"
+        let arguments = args.has("new-window") ? ["-na", browser, "--args", "--new-window"] : ["-a", browser]
+        if let failure = open(url, arguments: arguments) {
+            return failure
+        }
+        guard let title = args.option("wait-title") else {
+            Output.print(WindowsResponse(ok: true, windows: []))
+            return ExitCode.success
+        }
+        let wait = args.double("wait") ?? 10
+        let windows = waitForWindows(app: browser, title: title, seconds: wait, client: client)
+        guard !windows.isEmpty else {
+            return Output.fail("no \(browser) window titled /\(title)/ appeared within \(Int(wait))s", code: ExitCode.notFound)
+        }
+        Output.print(WindowsResponse(ok: true, windows: windows))
+        return ExitCode.success
+    }
+
+    private static func open(_ url: URL, arguments: [String]) -> Int32? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = arguments + [url.absoluteString]
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return Output.fail("cannot open url: \(error.localizedDescription)", code: ExitCode.appUnavailable)
+        }
+        return nil
+    }
+
+    private static func waitForWindows(app: String, title: String, seconds: Double, client: Client) -> [WindowInfo] {
+        guard (try? AppLauncher.ensureRunning(client: client)) != nil else { return [] }
         let deadline = Date().addingTimeInterval(seconds)
         repeat {
             if let (status, data) = try? client.get("/windows", query: ["app": app, "title": title]),
                status == 200,
                let response = try? JSONDecoder().decode(WindowsResponse.self, from: data),
                !response.windows.isEmpty {
-                return true
+                return response.windows
             }
             usleep(500_000)
         } while Date() < deadline
-        return false
+        return []
     }
 
     private static func json(_ args: Arguments, client: Client, path: String) -> Int32 {
@@ -201,12 +235,22 @@ enum Commands {
         } else {
             data = Data(source.utf8)
         }
-        guard (try? JSONDecoder().decode(HighlightRequest.self, from: data)) != nil else {
+        guard let request = try? JSONDecoder().decode(HighlightRequest.self, from: data) else {
             return Output.fail("input is not a valid HighlightRequest JSON", code: ExitCode.usage)
         }
         return withApp(client, successCode: { $0.ok ? ExitCode.success : ExitCode.notFound }) {
-            try client.postRaw(path, data)
+            args.has("check") ? try client.post("/find", withoutScrolling(request)) : try client.postRaw(path, data)
         }
+    }
+
+    private static func withoutScrolling(_ request: HighlightRequest) -> HighlightRequest {
+        var check = request
+        check.targets = request.targets.map { target in
+            var still = target
+            still.scroll = false
+            return still
+        }
+        return check
     }
 
     private static func makeRequest(_ args: Arguments, targets: [Target]) -> HighlightRequest {
