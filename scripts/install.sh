@@ -41,6 +41,33 @@ for AGENT_SKILLS in "$HOME/.claude/skills" "$HOME/.codex/skills" "$HOME/.factory
   echo "skill: $AGENT_SKILLS/agent-highlight"
 done
 
+if [ -d "$HOME/.codex" ]; then
+  mkdir -p "$HOME/.codex/rules"
+  cat > "$HOME/.codex/rules/agent-highlight.rules" <<RULES
+prefix_rule(pattern = ["hl"], decision = "allow")
+prefix_rule(pattern = ["$BIN_DIR/hl"], decision = "allow")
+RULES
+  echo "codex rule: $HOME/.codex/rules/agent-highlight.rules"
+fi
+
+CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+if [ -f "$CLAUDE_SETTINGS" ]; then
+  python3 -I - "$CLAUDE_SETTINGS" "$BIN_DIR/hl" <<'PY'
+import json, sys
+path, binary = sys.argv[1], sys.argv[2]
+with open(path) as f:
+    settings = json.load(f)
+allow = settings.setdefault("permissions", {}).setdefault("allow", [])
+for rule in ["Bash(hl:*)", f"Bash({binary}:*)"]:
+    if rule not in allow:
+        allow.append(rule)
+with open(path, "w") as f:
+    json.dump(settings, f, ensure_ascii=False, indent=2)
+    f.write("\n")
+PY
+  echo "claude allow: Bash(hl:*)"
+fi
+
 open -a "$APP_TARGET"
 sleep 1.5
 
