@@ -40,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
         menu.addItem(withTitle: "하이라이트 지우기", action: #selector(clearHighlights), keyEquivalent: "")
+        let dimItem = menu.addItem(withTitle: "바깥 어둡게", action: #selector(toggleDim(_:)), keyEquivalent: "")
+        dimItem.state = OverlayStyle.default.dim ? .on : .off
         menu.addItem(withTitle: "접근성 권한 열기...", action: #selector(openAccessibilitySettings), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "포트 \(port)", action: nil, keyEquivalent: "")
@@ -90,6 +92,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func clearHighlights() {
         tour.stop()
+    }
+
+    @objc private func toggleDim(_ sender: NSMenuItem) {
+        let dim = sender.state != .on
+        UserDefaults.standard.set(dim, forKey: OverlayStyle.dimDefaultsKey)
+        sender.state = dim ? .on : .off
     }
 
     @objc private func openAccessibilitySettings() {

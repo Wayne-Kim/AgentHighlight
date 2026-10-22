@@ -21,7 +21,11 @@ struct OverlayStyle {
     var color: NSColor
     var dim: Bool
 
-    static let `default` = OverlayStyle(color: NSColor(hex: Defaults.color) ?? .systemRed, dim: true)
+    static let dimDefaultsKey = "dimOutside"
+
+    static var `default`: OverlayStyle {
+        OverlayStyle(color: NSColor(hex: Defaults.color) ?? .systemRed, dim: UserDefaults.standard.bool(forKey: dimDefaultsKey))
+    }
 
     static func from(_ style: Style?) -> OverlayStyle {
         var result = OverlayStyle.default
