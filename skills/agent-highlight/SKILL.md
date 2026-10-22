@@ -148,6 +148,19 @@ hl steps '{"targets":[
 - Figma 창 하나는 노드 하나만 보여준다. 노드마다 `figma` 단계를 따로 두거나, Figma MCP
   `get_screenshot` 으로 받은 이미지를 안내 페이지에 넣는다(아래 `--image`).
 
+문서나 diff 를 Figma 와 대조하며 보는 안내라면 단계를 띄우기 전에 창부터 나눈다.
+
+1. Figma 를 별도 Chrome 창으로 먼저 연다: `hl open <Figma 링크> --new-window --wait-title Figma`. 사람이 쓰던
+   창의 탭으로 열지 않는다. `figma` 단계는 이미 열린 Figma 창을 재사용해 그 창의 탭으로 노드를 열기 때문에,
+   Figma 창이 먼저 있어야 안내 페이지 창이 Figma 로 바뀌지 않는다.
+2. 안내 페이지 창과 Figma 창을 같은 모니터에 좌우 절반씩 둔다. `hl windows --app "Google Chrome"` 으로 두 창의
+   `rect` 를 보고, 두 창이 겹치거나 사람의 다른 창(Jira 등)과 같은 `rect` 로 떠 있으면 위치를 다시 잡는다. PR
+   안내는 `pr-guide.py --figma` 가 이 1-2 를 해 준다.
+3. Figma 를 마지막 한 단계로 몰지 않는다. 코드 단계마다 그 코드에 해당하는 하위 노드 단계를 바로 뒤에 둔다.
+   화면 프레임 하나만 걸지 않는다. 노드 id 는 Figma MCP `get_metadata` 로 찾는다.
+4. 띄우기 전에 `hl steps --check` 로 전 단계를 확인한다. 답변에는 어느 창이 왼쪽이고 어느 창이 오른쪽인지
+   한 줄로 알린다.
+
 ### PR 을 커밋 순서로 안내하기
 
 GitHub PR 의 커밋·파일 diff 화면은 보이는 줄만 그려서 아래쪽 줄은 접근성 트리에 없다. `hl find` 가 0건을
@@ -155,11 +168,13 @@ GitHub PR 의 커밋·파일 diff 화면은 보이는 줄만 그려서 아래쪽
 
 ```bash
 python3 ~/.agents/skills/agent-highlight/scripts/pr-guide.py 123 --repo ~/Projects/my-app \
+  --figma "https://www.figma.com/design/<파일>?node-id=1-2" \
   --note 1="응답 타입만 넓혔다" --image 4=/path/list-item.png --points - <<'JSON'
 [
   {"section": 1, "label": "1. 응답 타입", "note": "세 곳에 같은 두 필드를 더한다"},
-  {"commit": 2, "file": "mapUserDto.ts", "text": "export const", "label": "공용 매퍼", "note": "다섯 곳의 매핑을 모았다"},
-  {"figma": "https://www.figma.com/design/<파일>?node-id=3-4", "label": "시안"}
+  {"commit": 2, "file": "ListItem.tsx", "text": "<Badge", "label": "뱃지", "note": "status 로 색을 고른다"},
+  {"figma": "https://www.figma.com/design/<파일>?node-id=3-4", "label": "뱃지 시안", "note": "이 뱃지가 status 값이다"},
+  {"commit": 3, "file": "mapUserDto.ts", "text": "export const", "label": "공용 매퍼", "note": "다섯 곳의 매핑을 모았다"}
 ]
 JSON
 hl steps - < <출력의 steps 경로>
@@ -168,6 +183,10 @@ hl steps - < <출력의 steps 경로>
 - 스크립트는 `gh pr view` 로 커밋 목록을 받고, 커밋마다 `git show` diff 를 섹션 하나로 그린다. 줄마다
   `<div>` 하나이고 앞에 줄 번호가 붙는다. 커밋이 로컬에 없으면 `pull/<번호>/head` 를 받아 온다.
 - 페이지를 새 Chrome 창으로 열고 창이 뜰 때까지 기다린다. 창 제목은 `PR <번호> guide <시각>` 이다.
+- `--figma <링크>` 를 주면 Figma 를 별도 Chrome 창으로 한 번 더 열고, 안내 페이지 창이 뜬 모니터를 좌우로
+  나눠 안내 페이지를 왼쪽, Figma 를 오른쪽에 둔다. 실제로 놓인 좌표가 출력의 `layout.left`·`layout.right`
+  에 있다. `layout` 이 `null` 이면 창을 못 옮긴 것이니 `hl windows` 로 보고 손으로 잡는다. Figma 가 있는 PR
+  안내는 이 옵션을 쓰고, 위 "단계에 Figma 섞기" 의 3-4 를 따른다.
 - `--points` 의 항목 하나가 단계 하나가 된다. `section`(커밋 번호) 은 섹션 제목, `commit`(번호나 커밋 해시
   앞부분)·`file`·`text` 는 그 커밋에서 `text` 가 든 첫 diff 줄, `figma` 는 Figma 단계, `target` 은 대상
   JSON 그대로다. `label`·`note` 는 그대로 옮긴다.
@@ -177,7 +196,8 @@ hl steps - < <출력의 steps 경로>
 - `--note <커밋>=<문단>` 과 `--image <커밋>=<경로>` 는 섹션 머리에 설명과 이미지를 붙인다. `--intro` 는
   PR 제목 아래 문단. 출력 폴더는 `--out` 으로 정하고, 없으면 임시 폴더 아래 `hl-pr-guide/` 에 둔다.
   `lines.json` 에 모든 줄의 대상 JSON 이 있다.
-- 순서: PR·diff 읽기 -> (필요하면) Figma 캡처 -> 스크립트 -> `hl steps`.
+- 순서: PR·diff 읽기 -> (Figma 가 있으면) `get_metadata` 로 코드별 노드 id 찾기 -> 스크립트(`--figma`) ->
+  `check.errors`·`pointErrors` 확인 -> `hl steps`.
 
 ## 실패했을 때
 

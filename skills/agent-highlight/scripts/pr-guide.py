@@ -15,6 +15,7 @@ import unicodedata
 
 BROWSER = "Google Chrome"
 SEARCH_LIMIT = 20
+FIGMA_TITLE = r"Figma(\s*-|$)"
 SKIPPED_HEADERS = ("index ", "--- ", "+++ ", "new file mode", "deleted file mode")
 HUNK = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 
@@ -61,6 +62,62 @@ def pairs(values, name):
             sys.exit(f"--{name} expects <commit>=<value>, got {value!r}")
         result.setdefault(key, []).append(rest)
     return result
+
+
+def jxa(script):
+    return json.loads(run(["osascript", "-l", "JavaScript", "-e", script], None) or "null")
+
+
+def chrome_window_ids():
+    return set(jxa(f'JSON.stringify(Application("{BROWSER}").windows.id())'))
+
+
+def new_window(before, seconds=15):
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        fresh = chrome_window_ids() - before
+        if fresh:
+            return fresh.pop()
+        time.sleep(0.3)
+    return None
+
+
+def open_window(hl, url, title_regex):
+    before = chrome_window_ids()
+    opened = subprocess.run([hl, "open", url, "--new-window", "--wait-title", title_regex, "--wait", "15"], capture_output=True, text=True)
+    return opened, new_window(before)
+
+
+def screen_of(rect):
+    screens = jxa(
+        'ObjC.import("AppKit"); JSON.stringify(ObjC.unwrap($.NSScreen.screens).map(s => '
+        "[s.frame.size.height, s.visibleFrame.origin.x, s.visibleFrame.origin.y, s.visibleFrame.size.width, s.visibleFrame.size.height]))"
+    )
+    main_height = screens[0][0]
+    center_x, center_y = rect["x"] + rect["width"] / 2, rect["y"] + rect["height"] / 2
+    for _, x, y, width, height in screens:
+        top = main_height - y - height
+        if x <= center_x < x + width and top <= center_y < top + height:
+            return x, top, width, height
+    return None
+
+
+def window_bounds(window_id, rect=None):
+    window = f'Application("{BROWSER}").windows().find(w => w.id() == "{window_id}")'
+    assign = f"{window}.bounds = {json.dumps(rect)}; " if rect else ""
+    return jxa(f"{assign}JSON.stringify({window}.bounds())")
+
+
+def split_side_by_side(left_id, right_id):
+    screen = screen_of(window_bounds(left_id))
+    if not screen:
+        return None
+    x, top, width, height = screen
+    half = width // 2
+    return {
+        "left": window_bounds(left_id, {"x": x, "y": top, "width": half, "height": height}),
+        "right": window_bounds(right_id, {"x": x + half, "y": top, "width": width - half, "height": height}),
+    }
 
 
 def ensure_commits(repo, number, commits):
@@ -209,6 +266,7 @@ def main():
     parser.add_argument("--image", action="append", default=[], help="<commit sha prefix or number>=<image path>")
     parser.add_argument("--intro", action="append", default=[], help="paragraph under the PR title")
     parser.add_argument("--points", help="JSON file (or - for stdin) with tour points")
+    parser.add_argument("--figma", help="Figma link to open in its own window beside the guide page")
     parser.add_argument("--no-open", action="store_true")
     args = parser.parse_args()
 
@@ -232,12 +290,14 @@ def main():
     }
     hl = find_hl()
     if not args.no_open:
-        opened = subprocess.run(
-            [hl, "open", index_html.as_uri(), "--new-window", "--wait-title", page.title_regex, "--wait", "15"],
-            capture_output=True, text=True,
-        )
+        opened, guide_id = open_window(hl, index_html.as_uri(), page.title_regex)
         summary["window"] = json.loads(opened.stdout or "{}")
         summary["ok"] = opened.returncode == 0
+        if args.figma:
+            figma, figma_id = open_window(hl, args.figma, FIGMA_TITLE)
+            summary["figmaWindow"] = json.loads(figma.stdout or "{}")
+            summary["layout"] = split_side_by_side(guide_id, figma_id) if guide_id and figma_id else None
+            summary["ok"] = summary["ok"] and figma.returncode == 0 and summary["layout"] is not None
 
     if args.points:
         points = json.load(sys.stdin if args.points == "-" else open(args.points, encoding="utf-8"))
