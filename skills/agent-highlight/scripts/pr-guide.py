@@ -33,6 +33,60 @@ h2{font-size:20px;margin-top:48px;border-top:1px solid var(--line);padding-top:2
 .file{background:var(--file);font-weight:600;padding:6px 10px;border-top:1px solid var(--line)}
 figure{margin:12px 0}
 figure img{max-width:100%;border:1px solid var(--line);border-radius:6px}
+::highlight(hljs-keyword),::highlight(hljs-type),::highlight(hljs-doctag),::highlight(hljs-template-tag){color:#cf222e}
+::highlight(hljs-title){color:#8250df}
+::highlight(hljs-attr),::highlight(hljs-attribute),::highlight(hljs-literal),::highlight(hljs-meta),::highlight(hljs-number),::highlight(hljs-operator),::highlight(hljs-variable),::highlight(hljs-property){color:#0550ae}
+::highlight(hljs-string),::highlight(hljs-regexp){color:#0a3069}
+::highlight(hljs-built_in),::highlight(hljs-symbol),::highlight(hljs-params){color:#953800}
+::highlight(hljs-comment){color:#6e7781}
+::highlight(hljs-name),::highlight(hljs-tag),::highlight(hljs-selector-tag),::highlight(hljs-quote){color:#116329}
+"""
+
+HIGHLIGHT_LIBRARY = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"
+
+HIGHLIGHT_SCRIPT = """
+const ALIASES = {tsx: "typescript", jsx: "javascript", mjs: "javascript", cjs: "javascript"};
+const ranges = {};
+
+function paint(language, nodes) {
+  const starts = nodes.map(node => node.data.match(/^\\s*\\d+ ./)[0].length);
+  const source = nodes.map((node, i) => node.data.slice(starts[i])).join("\\n");
+  const tree = document.createElement("div");
+  tree.innerHTML = hljs.highlight(source, {language, ignoreIllegals: true}).value;
+  const walker = document.createTreeWalker(tree, NodeFilter.SHOW_TEXT);
+  let line = 0, column = 0;
+  for (let text; (text = walker.nextNode()); ) {
+    const scope = text.parentElement.closest("[class^=hljs-]")?.className.split(" ")[0];
+    text.data.split("\\n").forEach((piece, i) => {
+      if (i) { line++; column = 0; }
+      if (scope && piece) {
+        const range = new Range();
+        range.setStart(nodes[line], starts[line] + column);
+        range.setEnd(nodes[line], starts[line] + column + piece.length);
+        (ranges[scope] ??= []).push(range);
+      }
+      column += piece.length;
+    });
+  }
+}
+
+if (window.hljs && CSS.highlights) {
+  let language = null, hunk = [];
+  const flush = () => { if (language && hunk.length) paint(language, hunk); hunk = []; };
+  for (const div of document.querySelectorAll(".diff > div")) {
+    if (div.classList.contains("file")) {
+      flush();
+      const extension = div.textContent.split(".").pop().toLowerCase();
+      language = hljs.getLanguage(extension) ? extension : ALIASES[extension];
+    } else if (div.classList.contains("hunk")) {
+      flush();
+    } else {
+      hunk.push(div.firstChild);
+    }
+  }
+  flush();
+  for (const [scope, list] of Object.entries(ranges)) CSS.highlights.set(scope, new Highlight(...list));
+}
 """
 
 
@@ -178,6 +232,7 @@ class Page:
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
             f"<title>{html.escape(self.title)}</title><style>{STYLE}</style></head><body>"
             + "\n".join(self.parts)
+            + f'<script src="{HIGHLIGHT_LIBRARY}"></script><script>{HIGHLIGHT_SCRIPT}</script>'
             + "</body></html>"
         )
 
